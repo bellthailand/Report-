@@ -1,1 +1,254 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบบันทึกการตรวจเช็คและซ่อมบำรุง</title>
+    
+    <!-- โหลด Tailwind CSS ผ่าน CDN เพื่อความสวยงาม -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- โหลด Font ภาษาไทย (Prompt) -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- โหลดไลบรารีสร้าง PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* ซ่อนส่วนที่จะใช้ปริ้น PDF ไว้แบบไม่ให้กวนหน้าจอ */
+        #pdf-layout {
+            position: absolute;
+            top: -9999px;
+            left: -9999px;
+            width: 794px; /* ขนาดกว้างประมาณ A4 */
+            background: white;
+            padding: 40px;
+            color: #111827;
+        }
+    </style>
+</head>
+<body class="p-6">
+
+    <!-- ส่วนของ UI หน้าเว็บที่ผู้ใช้เห็น -->
+    <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-8">
+        <h1 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-4">🛠️ ระบบบันทึกการตรวจเช็คและซ่อมบำรุง</h1>
+
+        <!-- ฟอร์มกรอกข้อมูล -->
+        <div class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">วันที่ตรวจเช็ค</label>
+                    <input type="date" id="date" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">ยี่ห้อเครื่อง</label>
+                    <input type="text" id="brand" placeholder="เช่น Evolt, ABB เป็นต้น" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">ขนาดเครื่อง (KW)</label>
+                    <input type="text" id="power" placeholder="เช่น 120 kW (DC Charger) หรือ 22 kW (AC Charger)" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">อาการที่พบ / Error</label>
+                <textarea id="symptoms" rows="3" placeholder="อธิบายอาการเสีย หรือ Error Code ที่พบ..." class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">วิธีแก้ไข</label>
+                <textarea id="solution" rows="3" placeholder="อธิบายขั้นตอนการซ่อมบำรุง หรือการเปลี่ยนอะไหล่..." class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+            </div>
+
+            <!-- ระบบอัปโหลดรูปภาพ -->
+            <div class="border-t pt-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">📸 รูปภาพประกอบ (สูงสุด 20 รูป)</h2>
+                <input type="file" id="imageInput" multiple accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 mb-4">
+                
+                <div id="imagePreviewContainer" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-4">
+                    <!-- รูปภาพจะถูกแสดงที่นี่ -->
+                </div>
+            </div>
+
+            <!-- ปุ่ม Export -->
+            <div class="border-t pt-6 flex justify-end">
+                <button id="exportBtn" onclick="generatePDF()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors shadow-md">
+                    📥 Export to PDF
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ส่วนของ Layout สำหรับแปลงเป็น PDF (ซ่อนไว้) -->
+    <div id="pdf-layout">
+        <div class="border-b-2 border-gray-800 pb-4 mb-6 flex justify-between items-end">
+            <div>
+                <h1 class="text-3xl font-bold">รายงานการตรวจเช็คและซ่อมบำรุง</h1>
+                <p class="text-gray-600 mt-2">Maintenance & Inspection Report</p>
+            </div>
+            <div class="text-right">
+                <p class="font-semibold text-lg" id="pdf-date-text">วันที่: -</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-6 mb-8 text-lg">
+            <div class="bg-gray-50 p-4 rounded-lg border">
+                <span class="font-bold text-gray-700">ยี่ห้อเครื่อง:</span>
+                <p class="mt-1" id="pdf-brand-text">-</p>
+            </div>
+            <div class="bg-gray-50 p-4 rounded-lg border">
+                <span class="font-bold text-gray-700">ขนาดเครื่อง (KW):</span>
+                <p class="mt-1" id="pdf-power-text">-</p>
+            </div>
+        </div>
+
+        <div class="mb-8">
+            <h2 class="text-xl font-bold mb-2 border-b pb-1">อาการที่พบ / Error</h2>
+            <div class="bg-red-50 p-4 rounded-lg border border-red-100 min-h-[100px] whitespace-pre-wrap" id="pdf-symptoms-text">-</div>
+        </div>
+
+        <div class="mb-8">
+            <h2 class="text-xl font-bold mb-2 border-b pb-1">วิธีแก้ไข / การดำเนินการ</h2>
+            <div class="bg-green-50 p-4 rounded-lg border border-green-100 min-h-[100px] whitespace-pre-wrap" id="pdf-solution-text">-</div>
+        </div>
+
+        <div>
+            <h2 class="text-xl font-bold mb-4 border-b pb-1">รูปภาพประกอบการทำงาน</h2>
+            <div id="pdf-images-container" class="grid grid-cols-2 gap-4">
+                <!-- รูปภาพใน PDF จะมาอยู่ที่นี่ -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ตั้งค่าวันที่ปัจจุบันให้ input date
+        document.getElementById('date').value = new Date().toISOString().split('T')[0];
+
+        let uploadedImages = [];
+        const imageInput = document.getElementById('imageInput');
+        const previewContainer = document.getElementById('imagePreviewContainer');
+
+        // จัดการเมื่อมีการเลือกรูปภาพ
+        imageInput.addEventListener('change', function(e) {
+            const files = Array.from(e.target.files);
+            const remainingSlots = 20 - uploadedImages.length;
+            const filesToAdd = files.slice(0, remainingSlots);
+
+            filesToAdd.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    uploadedImages.push(event.target.result);
+                    renderPreviews();
+                };
+                reader.readAsDataURL(file);
+            });
+            imageInput.value = ''; // รีเซ็ต input
+        });
+
+        // แสดงรูปภาพตัวอย่าง
+        function renderPreviews() {
+            previewContainer.innerHTML = '';
+            uploadedImages.forEach((src, index) => {
+                const div = document.createElement('div');
+                div.className = 'relative border rounded-lg overflow-hidden aspect-square group';
+                
+                const img = document.createElement('img');
+                img.src = src;
+                img.className = 'w-full h-full object-cover';
+                
+                const btn = document.createElement('button');
+                btn.innerHTML = '❌';
+                btn.className = 'absolute top-1 right-1 bg-white rounded-full p-1 text-xs shadow cursor-pointer opacity-80 hover:opacity-100';
+                btn.onclick = () => {
+                    uploadedImages.splice(index, 1);
+                    renderPreviews();
+                };
+
+                div.appendChild(img);
+                div.appendChild(btn);
+                previewContainer.appendChild(div);
+            });
+        }
+
+        // ฟังก์ชันสร้าง PDF
+        async function generatePDF() {
+            const btn = document.getElementById('exportBtn');
+            btn.innerHTML = '⏳ กำลังสร้าง PDF...';
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            try {
+                // 1. นำข้อมูลจากฟอร์มไปใส่ใน Layout ที่เตรียมไว้
+                document.getElementById('pdf-date-text').innerText = 'วันที่: ' + document.getElementById('date').value;
+                document.getElementById('pdf-brand-text').innerText = document.getElementById('brand').value || '-';
+                document.getElementById('pdf-power-text').innerText = document.getElementById('power').value || '-';
+                document.getElementById('pdf-symptoms-text').innerText = document.getElementById('symptoms').value || '-';
+                document.getElementById('pdf-solution-text').innerText = document.getElementById('solution').value || '-';
+
+                // 2. นำรูปภาพไปใส่ใน Layout PDF
+                const pdfImagesContainer = document.getElementById('pdf-images-container');
+                pdfImagesContainer.innerHTML = ''; // ล้างของเก่า
+                uploadedImages.forEach(src => {
+                    const div = document.createElement('div');
+                    div.className = 'border-2 border-gray-200 rounded-lg p-1';
+                    const img = document.createElement('img');
+                    img.src = src;
+                    img.className = 'w-full h-48 object-cover rounded';
+                    div.appendChild(img);
+                    pdfImagesContainer.appendChild(div);
+                });
+
+                // 3. เริ่มถ่ายภาพ Div เป็น Canvas ด้วย html2canvas (ตั้ง scale: 3 เพื่อความคมชัดสูง)
+                const element = document.getElementById('pdf-layout');
+                const canvas = await html2canvas(element, {
+                    scale: 3,
+                    useCORS: true,
+                    logging: false
+                });
+
+                // 4. สร้าง PDF ด้วย jsPDF
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                const pageHeight = pdf.internal.pageSize.getHeight();
+
+                const imgData = canvas.toDataURL('image/png');
+                let heightLeft = pdfHeight;
+                let position = 0;
+
+                // วางภาพหน้าแรกลงไป
+                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+                heightLeft -= pageHeight;
+
+                // ถ้าข้อมูลยาวเกิน 1 หน้า ให้เพิ่มหน้าใหม่และจัดวางตำแหน่งภาพใหม่
+                while (heightLeft >= 0) {
+                    position = heightLeft - pdfHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+                    heightLeft -= pageHeight;
+                }
+
+                // 5. โหลดไฟล์ PDF
+                const dateStr = document.getElementById('date').value;
+                pdf.save(`Maintenance_Report_${dateStr}.pdf`);
+
+            } catch (error) {
+                console.error("Error:", error);
+                alert('เกิดข้อผิดพลาดในการสร้าง PDF');
+            } finally {
+                // คืนค่าปุ่มกลับมาเหมือนเดิม
+                btn.innerHTML = '📥 Export to PDF';
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
+    </script>
+</body>
+</html>
 
